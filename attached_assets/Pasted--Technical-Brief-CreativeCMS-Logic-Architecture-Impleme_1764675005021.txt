@@ -1,0 +1,61 @@
+📋 Technical Brief: CreativeCMS Logic & Architecture Implementation
+Role: Senior Frontend Architect / React Specialist.
+Task: Implement the core logic and functionality of the CreativeCMS Page Editor and Admin Panel.
+⛔️ CRITICAL DESIGN CONSTRAINT:
+DO NOT CHANGE THE VISUAL DESIGN.
+The UI/UX, color palette (Apple-style white/clean), typography, and layout are approved and final.
+Do not write new CSS.
+Do not change Tailwind classes unless absolutely necessary for functional visibility (e.g., dragging state).
+Your focus is purely on LOGIC: State management, Event handlers, Drag-and-Drop implementation, and Data flow.
+🛠 Tech Stack (Strict)
+Framework: React 18 / Next.js 14 concept.
+State Management: Zustand (for the Page Editor local state) + Context API (for global workspace state).
+Drag & Drop: @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities.
+Rich Text: TipTap (headless).
+Validation: Zod.
+Icons: Lucide React (existing).
+🏗 Architecture & Modules to Build
+1. Data Model (The "Brain")
+Create a strict TypeScript definition for the Block system.
+Block Structure:
+code
+TypeScript
+type BlockType = 'hero' | 'text' | 'image' | 'columns' | 'cta';
+interface Block {
+  id: string;
+  type: BlockType;
+  props: Record<string, any>; // Dynamic props based on type
+  children?: Block[]; // For nested structures like columns
+}
+Store (useEditorStore):
+Actions: addBlock, updateBlock, moveBlock, deleteBlock, duplicateBlock.
+History: Implement basic undo/redo stack in the store.
+2. The Page Editor Engine (Visual Builder)
+You need to turn the static mock into a working engine.
+Canvas Component:
+Must render the Block[] array recursively.
+Wrap each block in a SortableContext from @dnd-kit.
+Block Renderers:
+Create separate components for each block type (e.g., HeroBlock, TextBlock).
+They must accept props from the JSON data.
+Interactivity:
+Clicking a block in Canvas -> Sets selectedBlockId in the store.
+Dragging a block -> Updates the array order using arrayMove.
+3. Property Inspector (Right Sidebar)
+Make the sidebar dynamic based on the selected block.
+If Hero is selected -> Show fields for "Title", "Subtitle", "Image URL".
+If Text is selected -> Show TipTap toolbar.
+Requirement: Changes in the sidebar must update the Canvas in real-time (controlled inputs connected to the Zustand store).
+4. Workspace Logic
+Implement the logic for the "Workspace Switcher" in the sidebar.
+When switching from 'CreativeStudio' to 'CreativeTech':
+Mock an API call (simulated delay).
+Update the currentWorkspace state.
+Refresh the Dashboard data (mock data) to reflect the selected company.
+🚀 Implementation Steps for You
+Step 1: Type Definitions. Define the Block, Page, and Workspace interfaces in types.ts.
+Step 2: State Store. Create stores/editorStore.ts using Zustand. Implement the CRUD logic for blocks.
+Step 3: DnD Integration. Wrap the Canvas in <DndContext>. Implement onDragEnd to handle reordering.
+Step 4: Component Logic. Refactor PageEditor.tsx to read from the store instead of static HTML. Map the blocks to the renderers.
+Step 5: Inspector Wiring. Connect the inputs in the Right Sidebar to updateBlock action.
+Output: Provide the updated code for types.ts, the new Store file, and the refactored PageEditor.tsx. Keep the existing Tailwind styling intact.

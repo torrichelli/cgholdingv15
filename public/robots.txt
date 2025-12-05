@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://creativegroup.com/sitemap.xml
+
+# Crawl-delay для бережной индексации
+Crawl-delay: 1
+
+# Запрет индексации служебных страниц
+Disallow: /api/
+Disallow: /admin/
+Disallow: /*.json$

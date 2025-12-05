@@ -1,0 +1,9 @@
+{
+  "name": "CreativeGroup Holding",
+  "description": "Global Technology Conglomerate. Ecosystem of companies in AI, Logistics, FinTech, and Design. (Alphabet-style architecture).",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}

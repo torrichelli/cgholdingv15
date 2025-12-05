@@ -1,0 +1,339 @@
+Итоговая идея (одним предложением)
+
+Сделать headless JavaScript CMS, которая только управляет данными и выдаёт их фронтенду в строго согласованном JSON-контракте — дизайн и верстка не меняются.
+
+1 — Главные принципы (обязательные)
+
+CMS не изменяет CSS/DOM/компоненты фронтенда.
+
+Контракт данных = закон. API возвращает точно те поля и структуры, которые ждёт фронтенд.
+
+Preview token: предпросмотр страниц в iframe/preview mode без публикации.
+
+SEO-поля встроены в модель страницы и отдаются API; фронтенд использует их для meta / OG / JSON-LD.
+
+Миграция: перевести текущие данные (если есть) в новую БД по тем же контрактам.
+
+Forms: унифицированный endpoint /api/contact/send + inbox в админке.
+
+Безопасность: RBAC, валидация, sanitization (контент хранится, но рендер делает фронтенд).
+
+2 — Контракт API (обязательный — фронтенд уже зависит от него)
+
+Все ответы — JSON; все эндпоинты под https; все публичные чтения — без auth; админ-операции — через JWT.
+
+2.1 Public (read)
+
+GET /api/pages/:slug
+Response:
+
+{
+  "id":"home",
+  "slug": "/",
+  "template": "home_v2",
+  "components": [ /* array of components in exact shape frontend expects */ ],
+  "seo": { /* see SEO section */ },
+  "status":"published",
+  "publishedAt":"2025-12-01T10:00:00Z"
+}
+
+
+— components MUST be exactly in the shape the current frontend renderer expects. Example: if frontend expects hero.title and hero.bg.src, supply those.
+
+GET /api/pages — list with filters (workspace, status, tag, pagination)
+
+GET /api/projects/:slug — project page contract
+
+GET /api/articles/:slug — article contract
+
+GET /status/api/services — status page contract (name, status, lastUpdated, note, link)
+
+GET /api/media/:id — media metadata + URLs (variants: webp, avif, srcset)
+
+2.2 Admin (write — JWT)
+
+POST /admin/api/pages — create page (body = page JSON)
+
+PUT /admin/api/pages/:id — update page content (draft)
+
+POST /admin/api/pages/:id/publish — publish (set publishedAt)
+
+POST /admin/api/pages/:id/preview-token — create temporary preview token
+
+GET /admin/api/pages/:id/versions — get versions
+
+POST /admin/api/media/upload — upload file -> returns urls
+
+POST /api/contact/send — public form handler
+
+Все поля возвращаемые API — документированы OpenAPI / JSON Schema.
+
+3 — Модели данных (минимум, Prisma-style / JSON schemas)
+3.1 Page
+{
+  "id": "string",
+  "slug": "string",
+  "template": "string",
+  "components": [ {} ], // free-form but validated against JSON Schema per template
+  "seo": {
+    "title":"", "description":"", "keywords":[], "canonical":"", "robots":"index,follow",
+    "og": {"title":"", "description":"", "imageId":""},
+    "jsonLd": {}
+  },
+  "status":"draft|published|archived",
+  "publishedAt":"ISO",
+  "workspaceId":"string",
+  "createdBy":"userId"
+}
+
+3.2 Component Schema Registry
+
+Store JSON Schema per component type (hero, features, testimonial...).
+
+Frontend uses same schema to validate on client.
+
+3.3 Media
+
+id, url, variants, width, height, mime, alt, tags, uploadedBy
+
+3.4 Project / Article / Vacancy / ServiceStatus / FormSubmission / User / Role / PageVersion / Symbol
+
+(Полные схемы — см. приложенные файлы в артефактах; нужно сгенерировать Prisma schema/SQL миграции.)
+
+4 — SEO (включаем в API и админку)
+
+Каждая страница и сущность (article, project) имеет SEO-блок:
+
+seo.title (50–70 chars indicator)
+
+seo.description (50–160 chars)
+
+seo.keywords []
+
+seo.canonical
+
+seo.robots
+
+seo.og.title, seo.og.description, seo.og.imageId
+
+seo.twitter.card (summary/summary_large_image)
+
+seo.jsonLd — editable JSON-LD
+
+seo.autoSuggestions — optional AI generated suggestions
+
+Backend responsibilities:
+
+validate lengths
+
+auto-fill defaults if empty (from page content)
+
+store history of SEO changes (who/when/old/new)
+
+Frontend responsibilities:
+
+when rendering page, read /api/pages/:slug → set <title>, meta tags, og tags, inject JSON-LD.
+
+5 — Drag-n-Drop: data-only editor (must NOT alter front code)
+
+Important: editor operates on data only. It must present components and fields exactly as frontend expects; it does not generate HTML/CSS.
+
+5.1 Key constraints
+
+Editor uses the Component Schema Registry to render forms/props for each component.
+
+Editor can reorder/duplicate/remove only those components that frontend allows. The allowed operations must be encoded into component schema via flags:
+
+{
+  "type":"hero",
+  "ops": { "editable": true, "reorderable": false, "repeatable": false }
+}
+
+
+Editor produces page.components JSON — nothing else.
+
+5.2 Live Preview
+
+On admin → generate preview token via POST /admin/api/pages/:id/preview-token.
+
+Frontend exposes a preview route /preview?token=... — if token valid, frontend will render draft content from CMS instead of published DB. (No CSS changes.)
+
+5.3 Symbols/Templates
+
+Symbols: reusable component JSON (with versioning). Editor can insert symbol instances (stores reference + local overrides).
+
+Templates: full page JSON templates for rapid page creation.
+
+6 — Forms & Contact handling (all forms must work correctly)
+6.1 Unified endpoint
+
+POST /api/contact/send
+Body:
+
+{ "name":"", "email":"", "phone":"", "message":"", "sourcePage":"home", "project":"creative-studio" }
+
+
+Backend:
+
+validate + sanitize
+
+store in DB FormSubmission
+
+send notifications:
+
+email to configured recipients (SMTP/SES)
+
+push to Telegram/Slack (webhook)
+
+return {status:'ok', id: '...'}
+
+6.2 Admin Inbox
+
+Admin UI lists submissions, filters by form/page/project, mark processed, add notes, export CSV.
+
+6.3 Anti-spam
+
+reCAPTCHA v3 or hCaptcha, honeypot, rate-limiting per IP.
+
+7 — Preview & Publish flow
+
+Editor edits → saves draft (PUT /admin/api/pages/:id).
+
+Click Preview → server issues preview token valid for N minutes for that page & user (POST /admin/api/pages/:id/preview-token) returning token.
+
+Frontend route /preview?token=... fetches draft JSON (admin read) and renders exactly as regular page (no CSS changes).
+
+Publish → POST /admin/api/pages/:id/publish:
+
+validate JSON against template schema
+
+set status=published, publishedAt=now
+
+create PageVersion snapshot
+
+trigger webhook(s) and CDN purge
+
+update sitemap
+
+8 — Миграция существующих данных (если есть)
+
+Export current data (pages, articles, media) into JSON matching new contract.
+
+Mapping script: convert old fields into new schema; for any missing fields set sensible defaults (e.g., seo.title = page.title).
+
+Upload media to CMS media storage (S3/Minio) and update URLs.
+
+Run automated visual regression tests (see тесты) to confirm front pages unchanged.
+
+9 — Validation & testing (обязательные)
+9.1 Unit & Integration
+
+API contract tests: for each GET /api/pages/:slug ensure structure equals expected JSON Schema.
+
+Schema validation on write: PUT /admin/api/pages/:id must return 400 if content JSON fails schema.
+
+9.2 Visual regression
+
+After migration & publish, run screenshot diffs (Puppeteer/Playwright):
+
+sample of public pages (desktop/mobile) before/after integration — zero diff allowed except for dynamic content areas.
+
+9.3 End-to-end
+
+Submit forms and confirm FormSubmission created, email sent, Slack msg posted.
+
+Preview flow: create draft, get preview token, verify preview renders draft.
+
+Publish flow: publish page, check /api/pages/:slug returns published data, sitemap updated, CDN purge sent.
+
+10 — Admin UI (must-haves)
+
+Content listing (pages/projects/articles) with filters & search.
+
+Page editor → opens Drag-n-Drop data editor (component list + inspector).
+
+SEO tab on every page: edit all SEO fields, preview snippets (Google + Social).
+
+Media library with upload + responsive variants + automatic optimization.
+
+Preview button (preview token flow).
+
+Publish / Schedule publish / Unpublish.
+
+Versions panel → list versions → diff (show JSON diffs + snapshot preview).
+
+Inbox for forms.
+
+Roles & user management.
+
+11 — Security & Ops (critical)
+
+RBAC enforced server-side on all admin endpoints.
+
+JWT with refresh; admin tokens short-lived.
+
+Sanitize rich text (strip inline scripts), but allow HTML if frontend expects (explicit allowlist).
+
+Rate limit public endpoints.
+
+Store secrets in Vault/secrets manager.
+
+Daily DB backups to S3; media backups incremental.
+
+Monitoring: Sentry for errors, Prometheus/Grafana for metrics.
+
+12 — Acceptance criteria (you can run these checks)
+
+For each public page in production list, GET /api/pages/:slug returns JSON matching the schema expected by frontend.
+
+After integrating CMS and switching frontend to read from /api/pages/:slug, visual output is pixel-identical (visual regression tests pass).
+
+Editor can create, preview (via preview token) and publish a page — and the published page is available at same URL.
+
+SEO fields for a page are editable in admin and the frontend reflects meta tags accordingly.
+
+All contact forms send submissions to /api/contact/send and items appear in admin inbox.
+
+Migration scripts convert existing data and media; no missing images/fields.
+
+Role-based permissions work; only permitted users can publish.
+
+Automated tests exist covering API contracts and publish/preview/form flows.
+
+13 — Файлы/артефакты, которые должен поставить AI / команда
+
+OpenAPI / JSON Schema для всех public endpoints.
+
+Component Schema Registry (JSON Schema per component).
+
+Migration scripts + sample data.
+
+Admin UI build (Next.js) with editor and SEO UI.
+
+Preview token mechanism docs.
+
+Test suite: unit + integration + visual regression + e2e.
+
+Deployment scripts + README (staging/prod).
+
+14 — Фазы внедрения (быстро — по приоритету)
+
+Phase 0 (1 неделя) — API contract + component schema registry; mock server returning page JSONs matching current frontend.
+
+Phase 1 (2-3 нед) — Basic CMS API + Admin auth + pages CRUD + media upload + sitemap. Integrate frontend to read from API (staging). Run visual tests.
+
+Phase 2 (3-4 нед) — Drag-n-Drop data-only editor, preview token, publish flow, versions, SEO UI.
+
+Phase 3 (2 нед) — Forms pipeline, inbox, webhooks, integrations (Slack/Telegram/Email).
+
+Phase 4 (1-2 нед) — Hardening, tests, backups, monitoring, docs, migration.
+
+15 — Финальные рекомендации (практические)
+
+Начать с контракта API: подогнать фронтенд чтобы он читает /api/pages/:slug — это самый быстрый и безопасный путь.
+
+Делать editor schema-first: регистрируйте компоненты в едином реестре — так фронтенд и админка всегда «поймут» друг друга.
+
+Использовать preview token вместо прямого доступа к draft-данным — безопасно и удобно.
+
+Visual regression на каждом релизе — единственный способ гарантировать «дизайн не поменялся».

@@ -1,0 +1,103 @@
+modules = ["nodejs-20", "web"]
+[agent]
+expertMode = true
+
+[nix]
+channel = "stable-25_05"
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Frontend"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Backend"
+
+[[workflows.workflow]]
+name = "Frontend"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow]]
+name = "Backend"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run server"
+waitForPort = 3001
+
+[workflows.workflow.metadata]
+outputType = "console"
+
+[[ports]]
+localPort = 1337
+externalPort = 6800
+
+[[ports]]
+localPort = 3000
+externalPort = 3000
+
+[[ports]]
+localPort = 3001
+externalPort = 3001
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
+localPort = 5173
+externalPort = 6000
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 37019
+externalPort = 3002
+
+[[ports]]
+localPort = 43925
+externalPort = 5000
+
+[[ports]]
+localPort = 44893
+externalPort = 3000
+
+[deployment]
+deploymentTarget = "static"
+build = ["npm", "run", "build"]
+publicDir = "dist"
+run = ["npm", "run", "preview"]
+
+[userenv]
+
+[userenv.shared]
+APP_KEYS = "3EfUxFN6QOeJAgBxO8snUA==,ASUG1oCpU5NMlmNL5SG4dA=="
+ADMIN_JWT_SECRET = "MKAq5IBnnun4Bk2WcpLwGA=="
+API_TOKEN_SALT = "hMxSuCAHGn9cH2jb6kiOMg=="
+TRANSFER_TOKEN_SALT = "yPzdOorFtATxXKl6r+WJcA=="
+ENCRYPTION_KEY = "LedwCSj3UfKDk4H44nHHgA=="
+JWT_SECRET = "ruGrv8VSgrytHCczZg3XrA=="
+STRAPI_PORT = "8080"
+PORT = "8080"
+STRAPI_TELEMETRY_DISABLED = "true"
+PAYLOAD_SECRET = "FqHmx+mhca4QrVvR4wAXIihMrsMRzJbMeRBDPBXzKcQ="
+PAYLOAD_PUBLIC_SERVER_URL = "https://d0586408-a03b-4f76-a052-ad59ee889e2f-00-37l4zh00xesnk.worf.replit.dev"

@@ -1,0 +1,507 @@
+КРАТКО — цель
+
+Создать CreativeCMS (полностью на JS), headless CMS + Admin UI + Drag-n-Drop редактор, чтобы ты мог управлять всем контентом сайта CreativeGroup (страницы, проекты, статьи, вакансии, статусы сервисов, формы, медиа) — без программистов после релиза.
+
+1. ТЕХНОЛОГИЧЕСКИЙ СТЕК (обязательный)
+
+Backend: Node.js (v20+) + NestJS (или Express с модульной архитектурой) — TypeScript.
+
+ORM: Prisma (PostgreSQL) — схема в repo.
+
+БД: PostgreSQL (primary) + Redis (кэш, сессии, очереди).
+
+Очереди / задачи: BullMQ (Redis).
+
+Storage: S3 / Minio для медиа.
+
+Admin UI: Next.js (app router) + React + TypeScript + TailwindCSS.
+
+State: Zustand + React Query.
+
+DnD: dnd-kit + TipTap для Rich Text.
+
+API: REST + GraphQL (Apollo) — primary is REST; GraphQL optional.
+
+Auth: JWT + refresh tokens; опционально OAuth (SSO).
+
+DevOps: Docker, Kubernetes (опционально), Nginx, CI (GitHub Actions / GitLab CI).
+
+Monitoring: Prometheus/Grafana or Sentry; логирование в ELK/Cloudwatch.
+
+2. Архитектура (высокоуровневая)
+
+API-слой (NestJS) — REST endpoints + GraphQL.
+
+Business layer — validation, RBAC, content rules.
+
+Storage layer — PostgreSQL (content), S3 (media), Redis (cache / locks).
+
+Admin UI (Next.js) — подключается к API, обеспечивает аутентификацию и авторизацию.
+
+Renderer — фронтенд сайтов (Next.js фронт или SSR) читает JSON из CMS и рендерит страницы; поддержка SSG/ISR.
+
+Drag-n-Drop Editor — встроен в Admin UI; сохраняет page JSON в CMS.
+
+Webhooks — уведомления внешним системам при публике/обновлении.
+
+Background workers — image processing, sitemap generation, email sending.
+
+3. Главные функциональные требования (фичи)
+
+Управление контентом: коллекции/типовые модели (pages, projects, articles, vacancies, services_status, contacts, menus, settings).
+
+Headless: любой frontend может читать контент через API.
+
+Drag-n-Drop редактор страниц (WYSIWYG block-based) с поддержкой responsive настроек.
+
+Медиа-библиотека: загрузка, оптимизация (webp/avif), crop, srcset.
+
+Формы: визуальный конструктор форм + routing заявок в DB, email, Telegram/Slack.
+
+Contact-pipeline: единый endpoint /api/contact/send + inbox в админке + уведомления.
+
+Workflow: draft → review → scheduled publish → publish/unpublish.
+
+Версионирование: history + revert.
+
+Roles & Permissions (RBAC).
+
+Multisite / workspaces: поддержка нескольких проектов в одном CMS.
+
+i18n: ru + en + kz (опционально) — per-entry translations.
+
+SEO: meta fields, canonical, OpenGraph, sitemap generator.
+
+Status page (services) — CRUD + public endpoint.
+
+"Coming soon" flags и статус поля для проектов.
+
+Import/Export JSON (pages, templates, symbols).
+
+Webhooks & API tokens для интеграций.
+
+Audit logs и activity feed.
+
+4. Контентные модели (обязательные) — таблицы/коллекции
+
+Ниже — минимально необходимый набор моделей с полями (Prisma-style).
+
+4.1 User / Role / Permission
+
+User { id, email, name, passwordHash, roles[], isActive, lastLogin }
+
+Role { id, name, permissions[] }
+
+Permission enum: content.create, content.edit, content.publish, forms.manage, media.upload, settings.manage, users.manage, webhooks.manage, devtools.access
+
+4.2 Page
+
+Page { id, title, slug, locale, status (draft/published/archived), content Json (blocks), seo Json, templateId, authorId, publishedAt, createdAt, updatedAt, workspaceId }
+
+4.3 Project (company project pages)
+
+Project { id, name, slug, tagline, description (rich), status (concept/prototype/dev/live), websiteUrl (nullable), logoId, heroMediaId, meta, contacts, createdAt }
+
+4.4 Article (blog)
+
+Article { id, title, slug, excerpt, content, authorId, tags[], heroMediaId, status, publishedAt, locale }
+
+4.5 Vacancy
+
+Vacancy { id, title, companyId, location, type (full/part), description, requirements, benefits, status, applyLinkOrForm }
+
+4.6 ServiceStatus (status page)
+
+ServiceStatus { id, name, slug, currentStatus (enum: online,in_development,prototype,coming_soon), description, lastUpdatedAt, externalLink }
+
+4.7 FormSubmission
+
+FormSubmission { id, formId, sourcePage, data Json, ip, userAgent, status (new/processed), createdAt }
+
+4.8 Media
+
+Media { id, url, filename, mimeType, width, height, variants Json, altText, tags[], uploadedBy, createdAt }
+
+4.9 Menu / Settings / Workspace / Webhook / ApiToken / PageVersion / Symbol (reusable block)
+
+Menu { id, name, items[] }
+
+Settings { key, value }
+
+Workspace { id, name }
+
+Webhook { id, url, triggers[], secret }
+
+ApiToken { id, name, scopes[], tokenHash }
+
+PageVersion { id, pageId, snapshot Json, createdBy, createdAt }
+
+Symbol { id, name, content Json, version }
+
+5. API (обязательные endpoints — REST)
+Auth
+
+POST /api/auth/login → {access, refresh}
+
+POST /api/auth/refresh
+
+POST /api/auth/logout
+
+Users & Roles
+
+GET /api/users (admin)
+
+POST /api/users
+
+PUT /api/users/:id
+
+GET /api/roles etc.
+
+Content
+
+GET /api/pages (filters, workspace, locale)
+
+GET /api/pages/:id
+
+POST /api/pages
+
+PUT /api/pages/:id
+
+POST /api/pages/:id/publish
+
+GET /api/pages/:id/versions
+
+POST /api/pages/:id/version/:versionId/revert
+
+Projects / Articles / Vacancies / Statuses — typical CRUD
+Media
+
+POST /api/media/upload → returns id + urls + variants
+
+GET /api/media/:id
+
+Forms
+
+POST /api/forms/:formId/submit (public) — stores FormSubmission, triggers notifications/webhook
+
+Contact unified
+
+POST /api/contact/send — alias that maps to forms subsystem; include sourcePage param
+
+Status public
+
+GET /status/api/services — public: list of services + statuses (for status page)
+
+Developer
+
+POST /api/preview-token — generate preview token for editor iframe
+
+Webhooks registration endpoints
+
+6. Admin UI — требования (must have)
+
+Admin — Next.js app, route /admin. Требования детально:
+
+6.1 Авторизация / Dashboard
+
+Secure login (2FA optional)
+
+Dashboard: recent submissions, publish queue, system health, recent activity log, quick links
+
+6.2 Content manager
+
+List / Filter / Sort pages, articles, projects, vacancies
+
+Editor: open page in Drag-n-Drop editor (WYSIWYG)
+
+Inline quick edit for title/slug/status
+
+6.3 Drag-n-Drop Editor (встроенный)
+
+Left: block library (sections, hero, columns, text, image, gallery, form, CTA, testimonial, pricing, faq, project-card, status-list)
+
+Center: Canvas (WYSIWYG) with device toggle (Desktop/Tablet/Mobile)
+
+Right: Inspector — props, styles, responsive overrides, SEO, visibility rules
+
+Top: Save (auto), Undo/Redo, Preview (iframe with preview token), Publish (open modal: immediate or schedule), Versions
+
+Reusable Symbols: save selection as Symbol, list Symbols, update instance sync (with unlink option)
+
+Templates: load page templates, save current as template
+
+6.4 Media Library
+
+Upload drag & drop
+
+Auto optimize images (generate webp/avif, sizes)
+
+Tagging and search
+
+Insert into editor
+
+6.5 Forms builder
+
+Build forms visually, set validations, post target (email, webhook, CRM), success page or message, spam protection (reCAPTCHA)
+
+6.6 Inbox / Contact Manager
+
+List of FormSubmission, mark as processed, assign to user, notes, export CSV, integration to Telegram/Slack
+
+6.7 Roles & Settings
+
+Manage roles and permissions
+
+Site settings (global meta, logos, menus)
+
+Workspaces switcher (manage multiple projects)
+
+6.8 Logs & Audit
+
+Activity log (who edited, published)
+
+Error logs link to Sentry
+
+7. Drag-n-Drop Editor — детально (реализация)
+7.1 Data model for editor
+
+Page.content = array of blocks with nested children (JSON). Block schema as defined earlier (id, type, props, children, responsive, meta).
+
+7.2 Block schema registry
+
+Each block has JSON Schema for inspector generation. Developers can register new block types.
+
+7.3 Features
+
+Drag from library → canvas; reorder; nest; multi-select
+
+Inline rich text editing (TipTap) with custom nodes for links, buttons, embeds
+
+Responsive overrides per breakpoint
+
+Symbols & templates
+
+Undo/Redo (command stack) persisted in local cache; snapshots saved on server (versions)
+
+Preview with preview token (secured) — renders front template in iframe or direct render
+
+7.4 Publish workflow
+
+Validate page JSON (schema)
+
+If publish → call /api/pages/:id/publish → backend generates SSG or sets flag for SSR and invalidates CDN cache
+
+Create PageVersion entry on publish
+
+8. Формы и контактная обработка
+8.1 Form Builder
+
+Build fields, set validations, notifications, mapping to CRM fields
+
+Spam protection: reCAPTCHA v3 + honeypot + rate limiting
+
+8.2 Submission pipeline
+
+Public POST /api/forms/:id/submit → validate → store in DB → push notification:
+
+send email (SMTP/SES) to configured recipients
+
+create inbox row in Admin
+
+optionally post to Telegram/Slack via webhook
+
+optional integration: create lead in external CRM via webhook
+
+8.3 Inbox
+
+Admin UI: filter by form, status, date; assign; add notes; export; webhook resend
+
+9. SEO / Sitemap / robots
+
+Admin fields for meta title/desc, OG image, canonical
+
+Auto sitemap generator on publish; incremental update
+
+robots.txt managed in settings
+
+Structured data (JSON-LD) support per page (field in inspector)
+
+10. Security & compliance
+
+Passwords: argon2 / bcrypt
+
+JWT with refresh tokens, httpOnly cookies optional
+
+RBAC checks server-side for every endpoint
+
+XSS protection: sanitize HTML on save + CSP headers
+
+Rate limit public endpoints (forms)
+
+GDPR: data deletion endpoint for FormSubmission / Users, DPA text in settings
+
+Audit logs retention policy
+
+11. Backups, monitoring, disaster recovery
+
+Daily DB backups to S3 (retention 30 days)
+
+Media backups incremental
+
+Health checks & alerts (Sentry + Prometheus/Grafana)
+
+Runbook for recovery (documented in repo)
+
+12. CI/CD и Deployment
+
+Repo: monorepo with apps/admin, apps/api, apps/renderer (optional)
+
+GitHub Actions / GitLab CI pipelines:
+
+PR lint/test/build
+
+On merge to main: build docker images, push to registry, deploy to staging/prod
+
+Environment: staging + production; secrets via Vault/Secrets Manager
+
+Cache/edge: CDN (Cloudflare) + purge on publish
+
+13. Testing
+
+Unit tests for API (Jest)
+
+Integration tests for publishing flow (Supertest)
+
+E2E tests for editor flows (Playwright / Cypress)
+
+Security scans (npm audit, Snyk)
+
+Load test forms endpoint (k6)
+
+14. Acceptance criteria (что должно быть у ИИ/команды по завершении)
+
+Рабочее API с указанными endpoint’ами, задеплоенное в staging, доступно по HTTPS.
+
+Admin UI (Next.js) задеплоен и доступен.
+
+Drag-n-Drop редактор работает: добавление блоков, редактирование текста, загрузка изображений, responsive overrides, preview, publish flow.
+
+Формы работают: POST /api/forms/:id/submit сохраняет в DB, отправляет email и добавляет в inbox.
+
+Sitemap генерируется после publish.
+
+Страница статусов доступна и обновляется через админку.
+
+Роли/права работают на уровне endpoint’ов и UI.
+
+Резервные копии БД в S3.
+
+Документация: README, API spec (OpenAPI), block schema guide, deploy/run instructions.
+
+Тесты: unit + integration + e2e базовые — проходят.
+
+15. Планы релиза (фазы + ориентир времени)
+
+(оценочно; для AIStudio/команды)
+
+Phase 0 — Подготовка (1 неделя)
+
+Архитектура, schema ER, выбор библиотек, wireframes Admin.
+
+Phase 1 — Core API & Auth (2–3 недели)
+
+Users, Roles, Pages model, Media upload, basic CRUD endpoints.
+
+Phase 2 — Admin UI + Basic Editor (3–4 недели)
+
+Next.js Admin skeleton, pages list, simple block editor (text/image/columns), media library.
+
+Phase 3 — Full DnD & Features (4–6 недель)
+
+Full DnD, symbols, versions, responsive props, preview tokens, publish workflow, sitemap.
+
+Phase 4 — Forms, Inbox, Webhooks (2–3 недели)
+
+Phase 5 — Polishing, Tests, CI/CD, Backup (2–3 недели)
+
+Итого MVP: ~10–14 недель при команде 3–4 devs (1 frontend, 1 backend, 1 fullstack, 1 QA), можно сократить с AI-assistance.
+
+16. Документы/артефакты, которые ИИ должен сгенерировать в конце
+
+Полный репозиторий (monorepo) с кодом и Dockerfiles.
+
+Prisma schema + миграции.
+
+OpenAPI spec (API).
+
+README с инструкцией запуска (staging/prod).
+
+Деплой-скрипты (GitHub Actions).
+
+Документация по block schema + как добавить новый блок.
+
+User manual для админа (как создавать страницу, публиковать, обрабатывать формы).
+
+Минимальный набор тестов и инструкции по резервному копированию.
+
+17. Дополнительные бизнес-правила (важно)
+
+Если проект не реализован → поле websiteUrl пусто и status='coming_soon' — на фронтенде показывать баннер «Скоро».
+
+Для инвесторов: специальный флаг investor_visible=true/false для страниц, которые можно показывать в investor section.
+
+Контактные формы с sourcePage = project slug. Для инвесторов — отдельная форма investor_contact с полями company, ticket, requested_amount.
+
+18. Команды/шаблоны запросов (пример)
+
+Publish page
+
+POST /api/pages/:id/publish
+Authorization: Bearer <token>
+Body: { publishAt?: ISOString } 
+
+
+Response: { success:true, pageUrl: "/about" }
+
+Submit contact
+
+POST /api/contact/send
+Body:
+{
+  name: "Aibek",
+  phone: "+7...",
+  email: "aibek@...com",
+  message: "Хочу инвестировать",
+  sourcePage: "investors"
+}
+
+
+→ stores in DB, sends email, returns {status:'ok', id: '...'}
+
+19. Советы по исполнению ИИ (направление для AIStudio)
+
+Реализовать модульными итерациями; сразу поставить API+Admin minimal; затем DnD.
+
+Использовать schema-driven approach: блоки и inspector генерируются от JSON Schema — это ускоряет расширяемость.
+
+Реализовать preview token flow — безопасный режим предпросмотра.
+
+Все публичные формы ставить за rate-limit и reCAPTCHA.
+
+Сразу добавить service_status модель для статуса проекта.
+
+20. Финальный чек-лист при сдаче (для тебя)
+
+ Могу авторизоваться в /admin и создать страницу.
+
+ Могу открыть DnD редактор и собрать страницу, сохранить, превью и опубликовать.
+
+ Могу создать проект со статусом coming_soon и проверить отображение на frontend.
+
+ Все контактные формы отправляют в /api/contact/send и появляются в admin/inbox.
+
+ Sitemap обновляется автоматически.
+
+ Права пользователей работают.
+
+ Полный репозиторий и инструкция для развёртывания доступны.
